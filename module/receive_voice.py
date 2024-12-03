@@ -1,6 +1,8 @@
+from module.pcm_to_mp3 import convert_pcm_to_mp3
 import socket
 import struct
 import os
+import time
 
 
 def receive_message():
@@ -15,34 +17,48 @@ def receive_message():
 
     keep_audio = True
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # สร้าง TCP Server
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(('0.0.0.0', 9595))
+    server_socket.listen(1)  # Listen for one client connection
     print("Server is listening on port 9595 ...")
+
+    conn, addr = server_socket.accept()
+    print(f"Connection established with {addr}")
+
     flag = False
+    last_time = 0
 
     while True:
-        data, addr = server_socket.recvfrom(10240 + 8)
-
-        if len(data) >= 8:
-            status, length = struct.unpack('ii', data[:8])
-            message = data[8:8+length]
-            print(f"Status: {status}, Length: {length}")
-            if keep_audio:
-                with open("voice/audio.pcm", "ab") as f:
-                    f.write(message)
-        else:
-            print("Invalid data")
-            "Invalid data"
+        # Receive 8-byte header first (status, length)
+        header = conn.recv(8)
+        if not header:
             break
 
+        status, length = struct.unpack('ii', header)  # unpack status and length
+        message = conn.recv(length)  # Receive the audio data
+
+        if len(message) == 0:
+            break
+
+        if keep_audio:
+            with open("voice/audio.pcm", "ab") as f:
+                f.write(message)
+
         if status == 1:
-            flag = True;
+            flag = True
+
+        if status == 2:
+            if last_time == 0:
+                last_time = time.time()
+            if time.time() - last_time > 5:
+                status = 3
 
         if status == 3:
             if flag:
-                # convert_pcm_to_mp3()
                 server_socket.close()
                 print("Connection closed")
                 flag = False
+                last_time = 0
                 return True
             return False
